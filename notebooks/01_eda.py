@@ -28,6 +28,7 @@ os.makedirs(os.path.join(OUT_DIR, "samples"), exist_ok=True)
 
 
 def main():
+    os.makedirs(config.DATA_DIR, exist_ok=True)
     print("Loading ChestMNIST …")
     train = ChestMNIST(split="train", download=True, root=config.DATA_DIR, size=config.IMAGE_SIZE)
     test  = ChestMNIST(split="test",  download=True, root=config.DATA_DIR, size=config.IMAGE_SIZE)

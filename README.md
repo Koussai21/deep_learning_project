@@ -58,6 +58,9 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
+
+# Créer les répertoires nécessaires (obligatoire avant le 1er lancement)
+python setup_dirs.py
 ```
 
 > **GPU recommandé.** Le code détecte automatiquement CUDA. Sur CPU, réduisez
