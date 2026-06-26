@@ -1,0 +1,28 @@
+# Data
+data/raw/
+*.npy
+
+# Models
+saved_models/*.pt
+saved_models/*.pth
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Outputs
+notebooks/eda_outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.ipynb_checkpoints

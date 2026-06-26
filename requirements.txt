@@ -1,0 +1,32 @@
+# Deep Learning - Radiological Triage System
+# Core
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+
+# Medical Imaging Dataset
+medmnist>=3.0.0
+
+# Vision Transformers and pretrained models
+timm>=0.9.0
+
+# NLP for multimodal component
+transformers>=4.30.0
+
+# Experiment tracking
+mlflow>=2.5.0
+
+# App demonstrator
+streamlit>=1.25.0
+Pillow>=9.0.0
+
+# Data science
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Utilities
+tqdm>=4.65.0
+pyyaml>=6.0
