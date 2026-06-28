@@ -1,19 +1,3 @@
-"""
-Vision Transformer (ViT) and hybrid CNN/Transformer for multi-label classification.
-
-Two options are provided:
-
-1. ViTClassifier  - ViT-Small patch16 from timm, compatible avec img_size=128.
-   A 128px input donne 64 tokens (8×8 patches) au lieu de 196 à 224px →
-   attention O(n²) ~3× plus rapide, embedding_dim 384 au lieu de 768.
-   Le modèle accepte img_size variable grâce à l'interpolation des positional
-   embeddings de timm.
-
-2. HybridCNNViT  - CNN (ResNet50 jusqu'à layer2) + Transformer léger 2 couches.
-   Le CNN réduit la résolution spatiale avant le Transformer :
-   128px → 16×16 = 256 tokens après layer2 (stride 8 total).
-   Bien plus rapide que le ViT pur tout en capturant le contexte global.
-"""
 import torch
 import torch.nn as nn
 import timm
@@ -23,16 +7,6 @@ import config
 
 
 class ViTClassifier(nn.Module):
-    """
-    ViT-Small/patch16 pretrained sur ImageNet-21k, adapté à img_size variable.
-
-    Changements vs ViT-Base :
-      - embed_dim : 384 (vs 768) → 2× moins de paramètres dans l'attention
-      - patch16 + img_size=128 : 64 tokens (vs 196 à 224px) → attention 9× plus rapide
-      - Total params : ~22M vs ~86M pour ViT-Base
-
-    Output: (B, num_classes) raw logits.
-    """
 
     def __init__(
         self,
@@ -48,7 +22,7 @@ class ViTClassifier(nn.Module):
             pretrained=pretrained,
             num_classes=0,
             drop_rate=dropout,
-            img_size=img_size,      # timm interpole les positional embeddings
+            img_size=img_size,
         )
         embed_dim = self.vit.embed_dim
         self.head = nn.Sequential(
@@ -62,18 +36,6 @@ class ViTClassifier(nn.Module):
 
 
 class HybridCNNViT(nn.Module):
-    """
-    CNN léger (ResNet50 jusqu'à layer2) + Transformer 2 couches.
-
-    Pourquoi layer2 au lieu de layer3 :
-      - layer2 stride total = 8 → 128px donne 16×16 = 256 tokens
-      - layer3 stride total = 16 → 128px donne 8×8 = 64 tokens mais canaux=1024
-
-    On choisit layer2 (canaux=512, 256 tokens) pour garder plus de contexte
-    spatial tout en restant rapide avec seulement 2 couches de Transformer.
-
-    Output: (B, num_classes) raw logits.
-    """
 
     def __init__(
         self,

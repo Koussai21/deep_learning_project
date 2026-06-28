@@ -21,17 +21,11 @@ def compute_metrics(
     threshold: float = 0.5,
     class_names: list = config.CLASS_NAMES,
 ) -> dict:
-    """
-    y_true        : (N, C) binary ground-truth labels
-    y_pred_logits : (N, C) raw model outputs (before sigmoid)
-    Returns a flat dict of metrics for MLflow logging.
-    """
-    y_prob = 1 / (1 + np.exp(-y_pred_logits))   # sigmoid
+    y_prob = 1 / (1 + np.exp(-y_pred_logits))
     y_bin  = (y_prob >= threshold).astype(int)
 
     metrics = {}
 
-    # ── AUC-ROC ───────────────────────────────────────────────────────────
     try:
         metrics["auc_macro"] = roc_auc_score(y_true, y_prob, average="macro")
         metrics["auc_micro"] = roc_auc_score(y_true, y_prob, average="micro")
@@ -39,23 +33,18 @@ def compute_metrics(
         for i, name in enumerate(class_names):
             metrics[f"auc_{name}"] = per_class_auc[i]
     except ValueError:
-        
         metrics["auc_macro"] = float("nan")
         metrics["auc_micro"] = float("nan")
 
-    # ── Average Precision (mAP) ───────────────────────────────────────────
     try:
         metrics["map_macro"] = average_precision_score(y_true, y_prob, average="macro")
         metrics["map_micro"] = average_precision_score(y_true, y_prob, average="micro")
     except ValueError:
         metrics["map_macro"] = float("nan")
 
-    # ── F1 ────────────────────────────────────────────────────────────────
-    metrics["f1_macro"]  = f1_score(y_true, y_bin, average="macro",  zero_division=0)
-    metrics["f1_micro"]  = f1_score(y_true, y_bin, average="micro",  zero_division=0)
+    metrics["f1_macro"]    = f1_score(y_true, y_bin, average="macro",    zero_division=0)
+    metrics["f1_micro"]    = f1_score(y_true, y_bin, average="micro",    zero_division=0)
     metrics["f1_weighted"] = f1_score(y_true, y_bin, average="weighted", zero_division=0)
-
-    # ── Hamming loss ──────────────────────────────────────────────────────
     metrics["hamming_loss"] = hamming_loss(y_true, y_bin)
 
     return metrics
@@ -103,7 +92,6 @@ def plot_label_distribution(y_true, save_path: str = None):
 
 
 def plot_reconstruction(original, reconstructed, n: int = 8, save_path: str = None):
-    """Visualise AE/VAE reconstruction quality."""
     fig, axes = plt.subplots(2, n, figsize=(n * 2, 4))
     for i in range(n):
         for row, img in enumerate([original, reconstructed]):

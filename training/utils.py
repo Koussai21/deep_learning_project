@@ -1,6 +1,3 @@
-"""
-Shared training utilities: reproducibility, device, early stopping, checkpointing.
-"""
 import os
 import random
 import numpy as np
@@ -11,7 +8,6 @@ import config
 
 
 def set_seed(seed: int = config.SEED) -> None:
-    """Fixes all RNG seeds for reproducible experiments."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -25,15 +21,11 @@ def get_device() -> torch.device:
 
 
 class EarlyStopping:
-    """
-    Stops training when the monitored metric stops improving.
-    Saves the best model checkpoint to disk.
-    """
 
     def __init__(
         self,
         patience: int = config.PATIENCE,
-        mode: str = "max",          # "max" for AUC/F1, "min" for loss
+        mode: str = "max",
         checkpoint_path: str = None,
         verbose: bool = True,
     ):
@@ -60,11 +52,11 @@ class EarlyStopping:
             if self.path:
                 torch.save(model.state_dict(), self.path)
                 if self.verbose:
-                    print(f"  ✓ checkpoint saved (score={score:.4f})")
+                    print(f"  checkpoint saved (score={score:.4f})")
         else:
             self.counter += 1
             if self.verbose:
-                print(f"  ✗ no improvement ({self.counter}/{self.patience})")
+                print(f"  no improvement ({self.counter}/{self.patience})")
             if self.counter >= self.patience:
                 self.early_stop = True
         return self.early_stop

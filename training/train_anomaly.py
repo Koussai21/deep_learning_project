@@ -1,27 +1,10 @@
-"""
-Train an Autoencoder (AE) or Variational Autoencoder (VAE) for anomaly
-detection on chest X-rays, with MLflow tracking.
-
-Protocol
---------
-1. The model is trained ONLY on "normal" images (samples with no positive
-   pathology label — the all-zero multi-label vector in ChestMNIST).
-2. The anomaly score is the per-sample reconstruction error.
-3. The decision threshold is set as a high percentile (default 95th) of the
-   reconstruction error on the normal training set.
-4. Samples scoring above the threshold are flagged as anomalous / atypical.
-
-Usage:
-    python -m training.train_anomaly --model ae
-    python -m training.train_anomaly --model vae
-"""
 import os
 import sys
 import time
 import argparse
 import numpy as np
 import torch
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -35,14 +18,12 @@ from sklearn.metrics import roc_auc_score
 
 
 def filter_normal(images, labels):
-    """Returns only the images whose label vector is all-zero (no pathology)."""
     mask = labels.sum(dim=1) == 0
     return images[mask]
 
 
 @torch.no_grad()
 def compute_scores(model, loader, device, is_vae):
-    """Returns anomaly scores and the binary 'is abnormal' flag per sample."""
     model.eval()
     scores, is_abnormal = [], []
     for images, labels in loader:
@@ -67,7 +48,6 @@ def train(args):
     if use_amp:
         torch.backends.cudnn.benchmark = True
 
-    # ── Data (64px is enough for reconstruction; no RandomErasing on AE target) ─
     loaders = get_chest_mnist_loaders(
         image_size=args.image_size,
         batch_size=args.batch_size,
@@ -75,7 +55,6 @@ def train(args):
         augment_train=False,
     )
 
-    # ── Model ─────────────────────────────────────────────────────────────
     if is_vae:
         model = VAE(image_size=args.image_size).to(device)
     else:
@@ -85,12 +64,11 @@ def train(args):
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr,
                                   weight_decay=config.WEIGHT_DECAY)
-    scaler    = GradScaler(enabled=use_amp)
+    scaler    = GradScaler("cuda", enabled=use_amp)
 
     ckpt_path = os.path.join(config.MODELS_DIR, f"anomaly_{args.model}.pt")
     stopper   = EarlyStopping(mode="min", checkpoint_path=ckpt_path)
 
-    # ── MLflow ────────────────────────────────────────────────────────────
     setup_mlflow(config.EXPERIMENT_ANOMALY)
     params = {
         "model": args.model, "image_size": args.image_size,
@@ -113,7 +91,7 @@ def train(args):
                 normal = normal.to(device)
 
                 optimizer.zero_grad(set_to_none=True)
-                with autocast(enabled=use_amp):
+                with autocast("cuda", enabled=use_amp):
                     if is_vae:
                         x_hat, mu, log_var = model(normal)
                         loss, recon, kl = model.elbo_loss(normal, x_hat, mu, log_var)
@@ -142,30 +120,25 @@ def train(args):
                 print("Early stopping triggered.")
                 break
 
-        # ── Threshold calibration on normal training scores ───────────────
         model.load_state_dict(torch.load(ckpt_path, map_location=device))
         train_scores, train_flags = compute_scores(model, loaders["train"], device, is_vae)
         normal_scores = train_scores[train_flags == 0]
         threshold = np.percentile(normal_scores, config.ANOMALY_THRESHOLD_PERCENTILE)
         print(f"Anomaly threshold ({config.ANOMALY_THRESHOLD_PERCENTILE}th pct): {threshold:.5f}")
 
-        # ── Evaluate separation on test set ───────────────────────────────
         test_scores, test_flags = compute_scores(model, loaders["test"], device, is_vae)
-        # Does reconstruction error separate normal vs pathological?
         if test_flags.sum() > 0 and (test_flags == 0).sum() > 0:
             auc = roc_auc_score(test_flags, test_scores)
         else:
             auc = float("nan")
         print(f"Anomaly detection AUC (normal vs pathological): {auc:.4f}")
 
-        # ── Log artifacts ─────────────────────────────────────────────────
         run.log_metrics({
             "anomaly_threshold": float(threshold),
             "anomaly_auc": float(auc),
             "mean_normal_score": float(normal_scores.mean()),
         })
 
-        # Reconstruction figure
         sample_images, _ = next(iter(loaders["test"]))
         sample_images = sample_images[:8].to(device)
         with torch.no_grad():
@@ -177,7 +150,6 @@ def train(args):
         run.log_best_checkpoint(ckpt_path)
         run.log_model(model, "model")
 
-        # Save threshold alongside the checkpoint for the demonstrator
         np.save(os.path.join(config.MODELS_DIR, f"anomaly_{args.model}_threshold.npy"),
                 np.array([threshold]))
 
@@ -187,10 +159,10 @@ def train(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model",       default="vae", choices=["ae", "vae"])
-    parser.add_argument("--epochs",     type=int,   default=config.NUM_EPOCHS)
-    parser.add_argument("--batch_size", type=int,   default=config.BATCH_SIZE)
-    parser.add_argument("--lr",         type=float, default=config.LEARNING_RATE)
-    parser.add_argument("--image_size", type=int,   default=64)
-    parser.add_argument("--num_workers",type=int,   default=4)
-    parser.add_argument("--no_amp",     action="store_true")
+    parser.add_argument("--epochs",      type=int,   default=config.NUM_EPOCHS)
+    parser.add_argument("--batch_size",  type=int,   default=config.BATCH_SIZE)
+    parser.add_argument("--lr",          type=float, default=config.LEARNING_RATE)
+    parser.add_argument("--image_size",  type=int,   default=64)
+    parser.add_argument("--num_workers", type=int,   default=4)
+    parser.add_argument("--no_amp",      action="store_true")
     train(parser.parse_args())

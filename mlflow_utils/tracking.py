@@ -28,8 +28,6 @@ class MLflowRun:
     def __exit__(self, *_):
         mlflow.end_run()
 
-    # ── Logging helpers ───────────────────────────────────────────────────
-
     def log_metrics(self, metrics: dict, step: int = None) -> None:
         mlflow.log_metrics(metrics, step=step)
 

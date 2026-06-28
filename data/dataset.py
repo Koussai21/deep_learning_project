@@ -11,10 +11,6 @@ import config
 
 
 def get_transforms(split: str, image_size: int = config.IMAGE_SIZE):
-    """
-    Augmentation during training, deterministic at eval time.
-    All values normalised with ImageNet statistics (standard for transfer learning).
-    """
     normalize = transforms.Normalize(
         mean=[0.485, 0.456, 0.406],
         std=[0.229, 0.224, 0.225],
@@ -47,12 +43,6 @@ def get_chest_mnist_loaders(
     data_dir: str = config.DATA_DIR,
     augment_train: bool = True,
 ):
-    """
-    Returns train / val / test DataLoaders for ChestMNIST.
-    Labels are multi-hot vectors of shape (14,) cast to float for BCE loss.
-    Set augment_train=False for reconstruction models (AE/VAE) where RandomErasing
-    would corrupt the pixel target that the model must reconstruct.
-    """
     os.makedirs(data_dir, exist_ok=True)
 
     loaders = {}
@@ -67,7 +57,6 @@ def get_chest_mnist_loaders(
         )
         workers = num_workers
         if os.name == "nt":
-            # Windows can fail when pickling worker state during DataLoader startup.
             workers = 0
         loaders[split] = DataLoader(
             dataset,
@@ -81,7 +70,6 @@ def get_chest_mnist_loaders(
 
 
 class MultiLabelWrapper(torch.utils.data.Dataset):
-    """Wraps a MedMNIST dataset, converting int labels to float multi-hot vectors."""
 
     def __init__(self, base_dataset, num_classes: int = config.NUM_CLASSES):
         self.dataset = base_dataset
@@ -92,7 +80,6 @@ class MultiLabelWrapper(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         image, label = self.dataset[idx]
-        # label shape: (num_classes,) with 0/1 integers
         label = torch.tensor(label, dtype=torch.float32).squeeze()
         return image, label
 
@@ -102,13 +89,6 @@ def get_class_weights(
     num_classes: int = config.NUM_CLASSES,
     max_weight: float = 10.0,
 ) -> torch.Tensor:
-    """
-    Computes positive class frequency to build a pos_weight tensor for BCE.
-    Higher weight for rare classes counters label imbalance.
-    Capped at max_weight to prevent the model from collapsing to "predict everything
-    positive" — without a cap, Pneumonia gets weight ~79 and Hernia ~544, which causes
-    the model to predict all classes as positive to avoid the huge false-negative penalty.
-    """
     pos_count = torch.zeros(num_classes)
     total = 0
     for _, labels in loader:

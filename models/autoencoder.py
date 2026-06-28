@@ -1,21 +1,3 @@
-"""
-Convolutional Autoencoder (AE) and Variational Autoencoder (VAE)
-for anomaly detection on chest X-rays.
-
-Anomaly score:
-  Both models are trained exclusively on normal (healthy) samples.
-  At inference, a high reconstruction error indicates an out-of-distribution image.
-
-AE  : score = pixel-wise MSE between input and reconstruction.
-VAE : score = ELBO loss = reconstruction MSE + β * KL divergence.
-        The KL term regularises the latent space and makes the score
-        more sensitive to distributional shifts.
-
-Usage:
-  model = VAE()
-  recon, mu, log_var = model(x)
-  score = vae_loss(recon, x, mu, log_var)
-"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -23,8 +5,6 @@ import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
-
-# ── Shared building blocks ────────────────────────────────────────────────────
 
 class DownBlock(nn.Module):
     def __init__(self, in_ch: int, out_ch: int):
@@ -55,10 +35,7 @@ class UpBlock(nn.Module):
         return self.block(x)
 
 
-# ── Autoencoder ───────────────────────────────────────────────────────────────
-
 class ConvEncoder(nn.Module):
-    """Maps (B,3,H,W) → (B, latent_dim)."""
 
     def __init__(self, latent_dim: int = config.LATENT_DIM):
         super().__init__()
@@ -68,8 +45,8 @@ class ConvEncoder(nn.Module):
             DownBlock(64,  128),
             DownBlock(128, 256),
         )
-        self.pool   = nn.AdaptiveAvgPool2d(4)
-        self.fc     = nn.Linear(256 * 4 * 4, latent_dim)
+        self.pool = nn.AdaptiveAvgPool2d(4)
+        self.fc   = nn.Linear(256 * 4 * 4, latent_dim)
 
     def forward(self, x):
         h = self.encoder(x)
@@ -79,7 +56,6 @@ class ConvEncoder(nn.Module):
 
 
 class ConvDecoder(nn.Module):
-    """Maps (B, latent_dim) → (B, 3, H, W)."""
 
     def __init__(self, latent_dim: int = config.LATENT_DIM, out_size: int = 64):
         super().__init__()
@@ -95,18 +71,12 @@ class ConvDecoder(nn.Module):
     def forward(self, z):
         h = self.fc(z).view(-1, 256, 4, 4)
         out = self.decoder(h)
-        # Resize to expected resolution if needed
         if out.shape[-1] != self.out_size:
             out = F.interpolate(out, size=self.out_size, mode="bilinear", align_corners=False)
         return out
 
 
 class ConvAE(nn.Module):
-    """
-    Convolutional Autoencoder.
-    Training loss: MSE(x, x_hat).
-    Anomaly score: per-sample mean squared reconstruction error.
-    """
 
     def __init__(self, latent_dim: int = config.LATENT_DIM, image_size: int = 64):
         super().__init__()
@@ -114,20 +84,16 @@ class ConvAE(nn.Module):
         self.decoder = ConvDecoder(latent_dim, out_size=image_size)
 
     def forward(self, x):
-        z   = self.encoder(x)
+        z     = self.encoder(x)
         x_hat = self.decoder(z)
         return x_hat, z
 
     @staticmethod
     def anomaly_score(x: torch.Tensor, x_hat: torch.Tensor) -> torch.Tensor:
-        """Per-sample reconstruction error (B,)."""
         return F.mse_loss(x_hat, x, reduction="none").mean(dim=[1, 2, 3])
 
 
-# ── Variational Autoencoder ───────────────────────────────────────────────────
-
 class VAEEncoder(nn.Module):
-    """Maps (B,3,H,W) → (B, latent_dim) mu and log_var."""
 
     def __init__(self, latent_dim: int = config.LATENT_DIM):
         super().__init__()
@@ -137,8 +103,8 @@ class VAEEncoder(nn.Module):
             DownBlock(64,  128),
             DownBlock(128, 256),
         )
-        self.pool   = nn.AdaptiveAvgPool2d(4)
-        flat_dim    = 256 * 4 * 4
+        self.pool       = nn.AdaptiveAvgPool2d(4)
+        flat_dim        = 256 * 4 * 4
         self.fc_mu      = nn.Linear(flat_dim, latent_dim)
         self.fc_log_var = nn.Linear(flat_dim, latent_dim)
 
@@ -149,11 +115,6 @@ class VAEEncoder(nn.Module):
 
 
 class VAE(nn.Module):
-    """
-    Variational Autoencoder.
-    Training loss: ELBO = MSE reconstruction + β * KL divergence.
-    Anomaly score: reconstruction error alone or full ELBO.
-    """
 
     def __init__(
         self,
@@ -179,11 +140,9 @@ class VAE(nn.Module):
 
     def elbo_loss(self, x, x_hat, mu, log_var) -> torch.Tensor:
         recon_loss = F.mse_loss(x_hat, x, reduction="mean")
-        # KL divergence: -0.5 * sum(1 + log_var - mu^2 - exp(log_var))
         kl = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
         return recon_loss + self.beta * kl, recon_loss, kl
 
     @staticmethod
     def anomaly_score(x: torch.Tensor, x_hat: torch.Tensor) -> torch.Tensor:
-        """Per-sample reconstruction error (B,)."""
         return F.mse_loss(x_hat, x, reduction="none").mean(dim=[1, 2, 3])

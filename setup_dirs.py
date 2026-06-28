@@ -1,8 +1,3 @@
-"""
-Creates all required project directories.
-Run once after cloning on a new machine / codespace:
-    python setup_dirs.py
-"""
 import os
 import config
 

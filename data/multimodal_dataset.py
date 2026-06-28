@@ -18,10 +18,6 @@ OPENI_REPORT_DIR = os.path.join(config.DATA_DIR, "openi", "ecgen-radiology")
 
 
 def parse_openi_reports(report_dir: str) -> pd.DataFrame:
-    """
-    Parses OpenI XML reports.
-    Returns a DataFrame with columns: uid, impression, findings, image_ids.
-    """
     records = []
     for xml_file in glob.glob(os.path.join(report_dir, "*.xml")):
         tree = ET.parse(xml_file)
@@ -54,10 +50,6 @@ def parse_openi_reports(report_dir: str) -> pd.DataFrame:
 
 
 class OpenIDataset(Dataset):
-    """
-    Pairs a chest X-ray image with its radiology report.
-    Returns (image_tensor, input_ids, attention_mask) for multimodal training.
-    """
 
     def __init__(
         self,
@@ -95,8 +87,7 @@ class OpenIDataset(Dataset):
     def __getitem__(self, idx):
         row = self.records.iloc[idx]
 
-        # ── Image ─────────────────────────────────────────────────────────
-        img_id  = row["image_ids"][0] if row["image_ids"] else row["uid"]
+        img_id   = row["image_ids"][0] if row["image_ids"] else row["uid"]
         img_path = os.path.join(self.image_dir, f"{img_id}.png")
         if not os.path.exists(img_path):
             img_path = os.path.join(self.image_dir, f"{img_id}.jpg")
@@ -104,7 +95,6 @@ class OpenIDataset(Dataset):
         image = Image.open(img_path).convert("RGB")
         image = self.transform(image)
 
-        # ── Text ──────────────────────────────────────────────────────────
         enc = self.tokenizer(
             row["report"],
             padding="max_length",

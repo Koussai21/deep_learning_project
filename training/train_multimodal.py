@@ -1,24 +1,3 @@
-"""
-Train and compare image-only, text-only and fused multimodal models on the
-OpenI chest X-ray + report dataset, with MLflow tracking.
-
-The comparison required by the spec:
-    - image-only baseline
-    - text-only baseline
-    - fused multimodal model (early / intermediate / late fusion)
-
-Note on labels
---------------
-OpenI does not ship the same 14-class multi-label vector as ChestMNIST.
-This script derives weak multi-label targets from the report text using a
-keyword matcher over the pathology vocabulary (see derive_labels). This is a
-proof-of-concept labelling strategy and its limits are discussed in the report.
-
-Usage:
-    python -m training.train_multimodal --mode image
-    python -m training.train_multimodal --mode text
-    python -m training.train_multimodal --mode fusion --fusion late
-"""
 import os
 import sys
 import time
@@ -39,7 +18,6 @@ from mlflow_utils.tracking import setup_mlflow, MLflowRun, log_epoch
 from training.utils import set_seed, get_device, EarlyStopping, count_parameters
 
 
-# ── Weak label derivation from report text ────────────────────────────────────
 PATHOLOGY_KEYWORDS = {
     "Atelectasis":        ["atelecta"],
     "Cardiomegaly":       ["cardiomegaly", "enlarged heart", "heart size"],
@@ -59,7 +37,6 @@ PATHOLOGY_KEYWORDS = {
 
 
 def derive_labels(report: str) -> np.ndarray:
-    """Maps a free-text report to a 14-dim multi-hot vector via keyword search."""
     text = report.lower()
     vec = np.zeros(config.NUM_CLASSES, dtype=np.float32)
     for i, name in enumerate(config.CLASS_NAMES):
@@ -96,10 +73,8 @@ def forward_batch(model, mode, image, input_ids, attn, device):
 @torch.no_grad()
 def evaluate(model, loader, mode, criterion, device):
     model.eval()
-    losses, all_logits, all_targets = [], [], []
+    all_logits = []
     for image, input_ids, attn in loader:
-        # Labels are derived from the tokenised report at collate-free level:
-        # we recover them from the loader's dataset (see run()).
         logits = forward_batch(model, mode, image, input_ids, attn, device)
         all_logits.append(logits.cpu().numpy())
     return np.concatenate(all_logits)
@@ -110,7 +85,6 @@ def run(args):
     device = get_device()
     print(f"Device: {device} | mode: {args.mode} | fusion: {args.fusion}")
 
-    # Lazy import so the classification pipeline works without OpenI present
     from data.multimodal_dataset import parse_openi_reports, OpenIDataset, OPENI_REPORT_DIR
     from torch.utils.data import DataLoader
 
@@ -119,7 +93,6 @@ def run(args):
     df["labels"] = df["report"].apply(derive_labels)
     print(f"Parsed {len(df)} image-report pairs.")
 
-    # Split
     rng = np.random.default_rng(config.SEED)
     idx = rng.permutation(len(df))
     n_test, n_val = int(0.15 * len(df)), int(0.15 * len(df))
@@ -144,14 +117,13 @@ def run(args):
     val_loader,   val_labels   = make_loader(splits["val"],   "val")
     test_loader,  test_labels  = make_loader(splits["test"],  "test")
 
-    # ── Model ─────────────────────────────────────────────────────────────
-    model = build_model(args.mode, args.fusion).to(device)
-    n_params = count_parameters(model)
+    model     = build_model(args.mode, args.fusion).to(device)
+    n_params  = count_parameters(model)
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr,
                                   weight_decay=config.WEIGHT_DECAY)
 
-    run_name = args.mode if args.mode != "fusion" else f"fusion_{args.fusion}"
+    run_name  = args.mode if args.mode != "fusion" else f"fusion_{args.fusion}"
     ckpt_path = os.path.join(config.MODELS_DIR, f"multimodal_{run_name}.pt")
     stopper   = EarlyStopping(mode="max", checkpoint_path=ckpt_path)
 
@@ -185,10 +157,9 @@ def run(args):
 
             train_loss = float(np.mean(losses))
 
-            # Validation
-            val_logits = evaluate(model, val_loader, args.mode, criterion, device)
+            val_logits  = evaluate(model, val_loader, args.mode, criterion, device)
             val_metrics = compute_metrics(val_labels.numpy(), val_logits)
-            epoch_time = time.time() - t0
+            epoch_time  = time.time() - t0
             print(f"  train_loss={train_loss:.4f}  val_auc={val_metrics['auc_macro']:.4f}  ({epoch_time:.0f}s)")
 
             log_epoch(epoch, train_loss, val_metrics.get("map_macro", 0.0), val_metrics)
@@ -196,9 +167,8 @@ def run(args):
                 print("Early stopping triggered.")
                 break
 
-        # ── Test ──────────────────────────────────────────────────────────
         model.load_state_dict(torch.load(ckpt_path, map_location=device))
-        test_logits = evaluate(model, test_loader, args.mode, criterion, device)
+        test_logits  = evaluate(model, test_loader, args.mode, criterion, device)
         test_metrics = compute_metrics(test_labels.numpy(), test_logits)
         print(f"\nTest AUC (macro): {test_metrics['auc_macro']:.4f}")
 
@@ -211,10 +181,9 @@ def run(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", default="fusion", choices=["image", "text", "fusion"])
-    parser.add_argument("--fusion", default="late",
-                        choices=["early", "intermediate", "late"])
-    parser.add_argument("--epochs", type=int, default=15)
-    parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument("--lr", type=float, default=2e-5)
+    parser.add_argument("--mode",       default="fusion", choices=["image", "text", "fusion"])
+    parser.add_argument("--fusion",     default="late",   choices=["early", "intermediate", "late"])
+    parser.add_argument("--epochs",     type=int,   default=15)
+    parser.add_argument("--batch_size", type=int,   default=16)
+    parser.add_argument("--lr",         type=float, default=2e-5)
     run(parser.parse_args())

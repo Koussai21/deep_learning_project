@@ -1,33 +1,3 @@
-"""
-Optimal training campaign for all models on ChestMNIST.
-
-What this script does vs the generic run_all_experiments.py:
-  - Per-model hyperparameters tuned for ChestMNIST (image size, LR, epochs, patience)
-  - Automatic Mixed Precision (AMP) on CUDA → ~2× faster on T4
-  - pos_weight capped at 10.0 (fixes the "predict everything positive" collapse)
-  - Gradient clipping (max_norm=1.0) for training stability
-  - Label smoothing 0.05 to prevent overconfident predictions
-  - 4 DataLoader workers + persistent_workers
-  - Stronger data augmentation for classifiers (RandomCrop, RandomErasing)
-  - AE/VAE trained WITHOUT RandomErasing (would corrupt the reconstruction target)
-
-Estimated total time on Lightning AI T4 (16 GB):
-  cnn_scratch  128px × 50 epochs  ≈ 20-25 min
-  densenet121  224px × 30 epochs  ≈ 45-55 min
-  vit          128px × 30 epochs  ≈ 35-45 min
-  hybrid       128px × 30 epochs  ≈ 40-50 min
-  ae           64px  × 30 epochs  ≈  2-3  min
-  vae          64px  × 30 epochs  ≈  3-4  min
-  ─────────────────────────────────────────────
-  TOTAL                           ≈ 2h30-3h10
-
-Usage:
-    cd deep_learning_project
-    python train_optimal.py                    # train all 6 models
-    python train_optimal.py --model vit        # one classifier only
-    python train_optimal.py --model ae         # one anomaly model only
-    python train_optimal.py --dry_run          # preview commands without running
-"""
 import os
 import sys
 import argparse
@@ -35,35 +5,6 @@ import subprocess
 import time
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-
-# ── Per-model optimal hyperparameters ────────────────────────────────────────
-#
-# cnn_scratch:
-#   - 128px: 4 MaxPool → 8×8 feature map, enough for a scratch CNN
-#   - lr=3e-4: higher LR needed when training from random init
-#   - epochs=50 + patience=12: needs more time to converge from scratch
-#   - batch=64: larger batch stabilises gradients for shallow net
-#
-# densenet121:
-#   - 224px: native pretrained resolution, avoids positional-embedding distortion
-#   - lr=1e-4: CheXNet paper value, safe for fine-tuning ImageNet weights
-#   - epochs=30 + patience=8: pretrained weights converge fast
-#   - batch=32: limited by 224px image memory on T4
-#
-# vit (ViT-Small/patch16, ImageNet-21k pretrained):
-#   - 128px: 64 tokens vs 196 at 224px → attention 9× cheaper, similar accuracy
-#   - IMPORTANT: img_size is fixed at train time; streamlit uses 128px accordingly
-#   - lr=5e-5: transformers are sensitive to LR, lower is safer
-#
-# hybrid (ResNet50-layer2 + 2-layer Transformer):
-#   - 128px: stride-8 CNN → 16×16 = 256 tokens before transformer
-#   - lr=8e-5: backbone pretrained, head random init → intermediate LR
-#
-# ae / vae:
-#   - 64px: enough for reconstruction, 4× faster than 128px
-#   - augment_train=False: the AE must reconstruct its input exactly;
-#     RandomErasing would corrupt pixels in both input and target
-#   - epochs=30 + patience=8
 
 CLASSIFIER_CONFIGS = {
     "cnn_scratch": {
@@ -168,7 +109,7 @@ def _run(model_name: str, cmd: list, cfg: dict, dry_run: bool) -> float:
     elapsed = time.time() - t0
 
     status = "OK" if result.returncode == 0 else f"FAILED (code {result.returncode})"
-    print(f"\n  → {model_name} done in {elapsed/60:.1f} min  [{status}]")
+    print(f"\n  {model_name} done in {elapsed/60:.1f} min  [{status}]")
     return elapsed
 
 
@@ -197,12 +138,12 @@ def main():
     else:
         clf_to_run, anom_to_run = [], [args.model]
 
-    print("\n  ChestMNIST — Optimal Training Campaign")
-    print(f"    Classifiers : {', '.join(clf_to_run) or '(none)'}")
-    print(f"    Anomaly     : {', '.join(anom_to_run) or '(none)'}")
-    print(f"    AMP         : enabled on CUDA")
-    print(f"    pos_weight  : capped at 10.0  (fixes predict-all-positive collapse)")
-    print(f"    Augment     : RandomCrop + RandomErasing (classifiers only)")
+    print("\nChestMNIST - Optimal Training Campaign")
+    print(f"  Classifiers : {', '.join(clf_to_run) or '(none)'}")
+    print(f"  Anomaly     : {', '.join(anom_to_run) or '(none)'}")
+    print(f"  AMP         : enabled on CUDA")
+    print(f"  pos_weight  : capped at 10.0")
+    print(f"  Augment     : RandomCrop + RandomErasing (classifiers only)")
 
     total_start = time.time()
     timings = {}

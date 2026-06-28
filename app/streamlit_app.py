@@ -16,10 +16,6 @@ from models.autoencoder import ConvAE, VAE
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ── Model registry ────────────────────────────────────────────────────────────
-# ViT positional embeddings are fixed at the size used during training (128px).
-# Feeding a different resolution at inference raises an AssertionError in timm.
-# CNN scratch and Hybrid are also trained at 128px in the optimal config.
 MODEL_IMAGE_SIZES = {
     "cnn_scratch":     128,
     "densenet121":     224,
@@ -52,7 +48,7 @@ def load_classifier(name: str):
 
 @st.cache_resource
 def load_anomaly(name: str):
-    path = os.path.join(config.MODELS_DIR, f"anomaly_{name}.pt")
+    path     = os.path.join(config.MODELS_DIR, f"anomaly_{name}.pt")
     thr_path = os.path.join(config.MODELS_DIR, f"anomaly_{name}_threshold.npy")
     if not os.path.exists(path):
         return None, None
@@ -81,10 +77,9 @@ def preprocess_anomaly(image: Image.Image, size: int = 64) -> torch.Tensor:
     return tf(image.convert("RGB")).unsqueeze(0)
 
 
-# ── UI ────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Radiological Triage Assistant", layout="wide")
-st.title("🩻 Radiological Triage Assistant")
-st.caption("Multi-label pathology prediction · Anomaly detection · Multimodal proof-of-concept")
+st.title("Radiological Triage Assistant")
+st.caption("Multi-label pathology prediction - Anomaly detection - Multimodal proof-of-concept")
 
 with st.sidebar:
     st.header("Configuration")
@@ -92,7 +87,7 @@ with st.sidebar:
     anomaly_name    = st.selectbox("Anomaly model", ["vae", "ae"])
     threshold_prob  = st.slider("Decision threshold", 0.0, 1.0, 0.5, 0.05)
     st.markdown("---")
-    st.caption("⚠️ Research prototype — not for clinical use.")
+    st.caption("Research prototype - not for clinical use.")
 
 uploaded = st.file_uploader("Upload a chest X-ray", type=["png", "jpg", "jpeg"])
 
@@ -104,8 +99,7 @@ if uploaded is not None:
         st.image(image, caption="Input radiograph", use_column_width=True)
 
     with col_right:
-        # ── Supervised classification ─────────────────────────────────────
-        st.subheader("1 · Supervised pathology predictions")
+        st.subheader("1 - Supervised pathology predictions")
         clf = load_classifier(classifier_name)
         if clf is None:
             st.warning(f"No trained checkpoint for `{classifier_name}`. "
@@ -119,7 +113,8 @@ if uploaded is not None:
             results = sorted(zip(config.CLASS_NAMES, probs), key=lambda t: -t[1])
             for name, p in results:
                 flagged = p >= threshold_prob
-                st.progress(float(p), text=f"{'🔴' if flagged else '⚪'} {name}: {p:.1%}")
+                label = f"[!] {name}: {p:.1%}" if flagged else f"{name}: {p:.1%}"
+                st.progress(float(p), text=label)
 
             positives = [n for n, p in results if p >= threshold_prob]
             if positives:
@@ -127,8 +122,7 @@ if uploaded is not None:
             else:
                 st.success("No pathology above threshold.")
 
-        # ── Anomaly detection ─────────────────────────────────────────────
-        st.subheader("2 · Anomaly / out-of-distribution score")
+        st.subheader("2 - Anomaly / out-of-distribution score")
         ae_model, threshold = load_anomaly(anomaly_name)
         if ae_model is None:
             st.warning(f"No trained checkpoint for `{anomaly_name}`. "
@@ -136,25 +130,23 @@ if uploaded is not None:
         else:
             xa = preprocess_anomaly(image).to(DEVICE)
             with torch.no_grad():
-                out = ae_model(xa)
+                out   = ae_model(xa)
                 x_hat = out[0]
                 score = ae_model.anomaly_score(xa, x_hat).item()
 
             st.metric("Reconstruction error", f"{score:.5f}")
             if threshold is not None:
                 if score > threshold:
-                    st.error(f"⚠️ Atypical image (score > threshold {threshold:.5f})")
+                    st.error(f"Atypical image (score > threshold {threshold:.5f})")
                 else:
-                    st.success(f"✓ Within normal distribution (threshold {threshold:.5f})")
+                    st.success(f"Within normal distribution (threshold {threshold:.5f})")
 
-            # show reconstruction
             recon_img = x_hat[0].cpu().numpy().transpose(1, 2, 0)
             recon_img = (recon_img - recon_img.min()) / (recon_img.max() - recon_img.min() + 1e-8)
             st.image(recon_img, caption="Reconstruction", width=200)
 
-    # ── Multimodal (optional) ─────────────────────────────────────────────
     st.markdown("---")
-    st.subheader("3 · Multimodal — process a radiology report (optional)")
+    st.subheader("3 - Multimodal - process a radiology report (optional)")
     report = st.text_area("Paste a radiology report (FINDINGS / IMPRESSION)", height=120)
     if report.strip():
         from training.train_multimodal import derive_labels
@@ -167,5 +159,5 @@ if uploaded is not None:
         st.caption("Late fusion combines image probabilities with report evidence. "
                    "Train with `python -m training.train_multimodal --mode fusion --fusion late`.")
 else:
-    st.info("⬆️ Upload a chest X-ray to start. "
+    st.info("Upload a chest X-ray to start. "
             "ChestMNIST test images can be exported with `notebooks/01_eda.py`.")

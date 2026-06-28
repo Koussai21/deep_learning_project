@@ -1,12 +1,3 @@
-"""
-CNN from scratch for multi-label chest pathology classification.
-
-Architecture:
-  4 convolutional blocks (Conv → BN → ReLU → MaxPool),
-  each doubling the number of channels (32 → 64 → 128 → 256).
-  Global average pooling collapses spatial dims.
-  Two fully-connected layers with Dropout lead to 14 sigmoid outputs.
-"""
 import torch
 import torch.nn as nn
 import sys, os
@@ -33,11 +24,6 @@ class ConvBlock(nn.Module):
 
 
 class CNNFromScratch(nn.Module):
-    """
-    Simple CNN baseline trained end-to-end without pretrained weights.
-    Input : (B, 3, image_size, image_size)
-    Output: (B, num_classes)  — raw logits, apply sigmoid for probabilities.
-    """
 
     def __init__(
         self,
@@ -75,5 +61,4 @@ class CNNFromScratch(nn.Module):
         return self.classifier(x)
 
     def get_feature_map(self, x: torch.Tensor) -> torch.Tensor:
-        """Returns the feature map before global pooling (for CAM visualisation)."""
         return self.features(x)

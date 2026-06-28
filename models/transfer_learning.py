@@ -1,18 +1,3 @@
-"""
-Transfer learning models for multi-label chest pathology classification.
-
-Three backbone options are provided:
-  - DenseNet121  : strong baseline for chest X-rays (CheXNet heritage)
-  - ResNet50     : standard residual network
-  - EfficientNetB0 : efficient baseline with good accuracy/cost tradeoff
-
-All models replace the original classification head with a linear layer
-producing num_classes logits (sigmoid applied at inference / loss time).
-
-Two training strategies:
-  - frozen   : only the new head is trained (fast, few-shot style)
-  - finetune : all weights updated with a lower LR for the backbone
-"""
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -62,17 +47,13 @@ def _build_efficientnet(num_classes: int, dropout: float, freeze_backbone: bool)
 
 
 BUILDERS = {
-    "densenet121": _build_densenet,
-    "resnet50":    _build_resnet,
+    "densenet121":    _build_densenet,
+    "resnet50":       _build_resnet,
     "efficientnet_b0": _build_efficientnet,
 }
 
 
 class TransferModel(nn.Module):
-    """
-    Wrapper around a pretrained torchvision backbone.
-    Output: (B, num_classes) raw logits.
-    """
 
     def __init__(
         self,
