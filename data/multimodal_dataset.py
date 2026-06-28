@@ -1,11 +1,3 @@
-"""
-Multimodal dataset loader for OpenI (Indiana University Chest X-Ray dataset).
-
-Download instructions:
-  https://openi.nlm.nih.gov/faq#collection
-  Place images in  data/raw/openi/images/
-  Place reports in data/raw/openi/ecgen-radiology/   (XML files)
-"""
 import os
 import glob
 import xml.etree.ElementTree as ET

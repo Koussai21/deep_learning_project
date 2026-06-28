@@ -21,6 +21,7 @@ import time
 import argparse
 import numpy as np
 import torch
+from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -60,11 +61,18 @@ def train(args):
     set_seed()
     device = get_device()
     is_vae = args.model == "vae"
-    print(f"Device: {device} | model: {args.model}")
+    use_amp = not getattr(args, "no_amp", False) and torch.cuda.is_available()
+    num_workers = getattr(args, "num_workers", 4)
+    print(f"Device: {device} | model: {args.model} | AMP: {use_amp}")
+    if use_amp:
+        torch.backends.cudnn.benchmark = True
 
-    # ── Data (small resolution is enough for reconstruction) ──────────────
+    # ── Data (64px is enough for reconstruction; no RandomErasing on AE target) ─
     loaders = get_chest_mnist_loaders(
-        image_size=args.image_size, batch_size=args.batch_size,
+        image_size=args.image_size,
+        batch_size=args.batch_size,
+        num_workers=num_workers,
+        augment_train=False,
     )
 
     # ── Model ─────────────────────────────────────────────────────────────
@@ -77,6 +85,7 @@ def train(args):
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr,
                                   weight_decay=config.WEIGHT_DECAY)
+    scaler    = GradScaler(enabled=use_amp)
 
     ckpt_path = os.path.join(config.MODELS_DIR, f"anomaly_{args.model}.pt")
     stopper   = EarlyStopping(mode="min", checkpoint_path=ckpt_path)
@@ -103,17 +112,19 @@ def train(args):
                     continue
                 normal = normal.to(device)
 
-                optimizer.zero_grad()
-                if is_vae:
-                    x_hat, mu, log_var = model(normal)
-                    loss, recon, kl = model.elbo_loss(normal, x_hat, mu, log_var)
-                    recon_losses.append(recon.item())
-                    kl_losses.append(kl.item())
-                else:
-                    x_hat, _ = model(normal)
-                    loss = torch.nn.functional.mse_loss(x_hat, normal)
-                loss.backward()
-                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+                with autocast(enabled=use_amp):
+                    if is_vae:
+                        x_hat, mu, log_var = model(normal)
+                        loss, recon, kl = model.elbo_loss(normal, x_hat, mu, log_var)
+                        recon_losses.append(recon.item())
+                        kl_losses.append(kl.item())
+                    else:
+                        x_hat, _ = model(normal)
+                        loss = torch.nn.functional.mse_loss(x_hat, normal)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
                 losses.append(loss.item())
                 pbar.set_postfix(loss=f"{loss.item():.4f}")
 
@@ -175,9 +186,11 @@ def train(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="vae", choices=["ae", "vae"])
-    parser.add_argument("--epochs", type=int, default=config.NUM_EPOCHS)
-    parser.add_argument("--batch_size", type=int, default=config.BATCH_SIZE)
-    parser.add_argument("--lr", type=float, default=config.LEARNING_RATE)
-    parser.add_argument("--image_size", type=int, default=64)
+    parser.add_argument("--model",       default="vae", choices=["ae", "vae"])
+    parser.add_argument("--epochs",     type=int,   default=config.NUM_EPOCHS)
+    parser.add_argument("--batch_size", type=int,   default=config.BATCH_SIZE)
+    parser.add_argument("--lr",         type=float, default=config.LEARNING_RATE)
+    parser.add_argument("--image_size", type=int,   default=64)
+    parser.add_argument("--num_workers",type=int,   default=4)
+    parser.add_argument("--no_amp",     action="store_true")
     train(parser.parse_args())

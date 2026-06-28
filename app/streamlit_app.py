@@ -1,15 +1,3 @@
-"""
-Streamlit demonstrator for the radiological triage system.
-
-Features (matching spec 4.5):
-  - Upload a chest X-ray
-  - Display supervised multi-label predictions (14 pathologies)
-  - Display an anomaly score (AE/VAE) with normal/atypical verdict
-  - Optionally process a radiology report (multimodal late fusion)
-
-Run:
-    streamlit run app/streamlit_app.py
-"""
 import os
 import sys
 import numpy as np
@@ -29,12 +17,24 @@ from models.autoencoder import ConvAE, VAE
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ── Model registry ────────────────────────────────────────────────────────────
+# ViT positional embeddings are fixed at the size used during training (128px).
+# Feeding a different resolution at inference raises an AssertionError in timm.
+# CNN scratch and Hybrid are also trained at 128px in the optimal config.
+MODEL_IMAGE_SIZES = {
+    "cnn_scratch":     128,
+    "densenet121":     224,
+    "resnet50":        224,
+    "efficientnet_b0": 224,
+    "vit":             128,
+    "hybrid":          128,
+}
+
 CLASSIFIER_BUILDERS = {
     "cnn_scratch":     CNNFromScratch,
     "densenet121":     lambda: TransferModel("densenet121"),
     "resnet50":        lambda: TransferModel("resnet50"),
     "efficientnet_b0": lambda: TransferModel("efficientnet_b0"),
-    "vit":             ViTClassifier,
+    "vit":             lambda: ViTClassifier(img_size=128),
     "hybrid":          HybridCNNViT,
 }
 
@@ -111,7 +111,8 @@ if uploaded is not None:
             st.warning(f"No trained checkpoint for `{classifier_name}`. "
                        f"Run `python -m training.train_classification --model {classifier_name}`.")
         else:
-            x = preprocess(image, config.IMAGE_SIZE).to(DEVICE)
+            img_size = MODEL_IMAGE_SIZES.get(classifier_name, config.IMAGE_SIZE)
+            x = preprocess(image, img_size).to(DEVICE)
             with torch.no_grad():
                 probs = torch.sigmoid(clf(x)).cpu().numpy()[0]
 

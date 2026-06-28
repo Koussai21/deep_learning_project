@@ -1,10 +1,3 @@
-"""
-MLflow tracking utilities.
-
-Every training script calls setup_mlflow() first, then uses the context
-manager run_context() to wrap the training loop. Artifacts (figures,
-best model checkpoint, config YAML) are logged automatically.
-"""
 import os
 import yaml
 import mlflow
@@ -22,7 +15,6 @@ def setup_mlflow(experiment_name: str) -> None:
 
 
 class MLflowRun:
-    """Context manager that wraps an MLflow run and exposes helper methods."""
 
     def __init__(self, run_name: str, params: dict = None):
         self.run_name = run_name
@@ -62,7 +54,6 @@ class MLflowRun:
 
 
 def log_epoch(step: int, train_loss: float, val_loss: float, val_metrics: dict) -> None:
-    """Convenience function to log a single epoch from inside a training loop."""
     mlflow.log_metrics(
         {"train_loss": train_loss, "val_loss": val_loss, **val_metrics},
         step=step,

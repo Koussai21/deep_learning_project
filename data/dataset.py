@@ -20,14 +20,17 @@ def get_transforms(split: str, image_size: int = config.IMAGE_SIZE):
         std=[0.229, 0.224, 0.225],
     )
     if split == "train":
+        pad = int(image_size * 0.1)
         return transforms.Compose([
-            transforms.Resize((image_size, image_size)),
+            transforms.Resize((image_size + pad, image_size + pad)),
+            transforms.RandomCrop(image_size),
             transforms.RandomHorizontalFlip(),
-            transforms.RandomRotation(10),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2),
+            transforms.RandomRotation(12),
+            transforms.ColorJitter(brightness=0.3, contrast=0.3),
             transforms.Lambda(lambda img: img.convert("RGB")),
             transforms.ToTensor(),
             normalize,
+            transforms.RandomErasing(p=0.15, scale=(0.02, 0.10), ratio=(0.3, 3.3)),
         ])
     return transforms.Compose([
         transforms.Resize((image_size, image_size)),
@@ -40,20 +43,24 @@ def get_transforms(split: str, image_size: int = config.IMAGE_SIZE):
 def get_chest_mnist_loaders(
     image_size: int = config.IMAGE_SIZE,
     batch_size: int = config.BATCH_SIZE,
-    num_workers: int = 2,
+    num_workers: int = 4,
     data_dir: str = config.DATA_DIR,
+    augment_train: bool = True,
 ):
     """
     Returns train / val / test DataLoaders for ChestMNIST.
     Labels are multi-hot vectors of shape (14,) cast to float for BCE loss.
+    Set augment_train=False for reconstruction models (AE/VAE) where RandomErasing
+    would corrupt the pixel target that the model must reconstruct.
     """
     os.makedirs(data_dir, exist_ok=True)
 
     loaders = {}
     for split in ("train", "val", "test"):
+        tfm_split = split if augment_train else "val"
         dataset = ChestMNIST(
             split=split,
-            transform=get_transforms(split, image_size),
+            transform=get_transforms(tfm_split, image_size),
             download=True,
             root=data_dir,
             size=image_size,
@@ -68,6 +75,7 @@ def get_chest_mnist_loaders(
             shuffle=(split == "train"),
             num_workers=workers,
             pin_memory=torch.cuda.is_available(),
+            persistent_workers=(workers > 0),
         )
     return loaders
 
@@ -89,10 +97,17 @@ class MultiLabelWrapper(torch.utils.data.Dataset):
         return image, label
 
 
-def get_class_weights(loader: DataLoader, num_classes: int = config.NUM_CLASSES) -> torch.Tensor:
+def get_class_weights(
+    loader: DataLoader,
+    num_classes: int = config.NUM_CLASSES,
+    max_weight: float = 10.0,
+) -> torch.Tensor:
     """
     Computes positive class frequency to build a pos_weight tensor for BCE.
     Higher weight for rare classes counters label imbalance.
+    Capped at max_weight to prevent the model from collapsing to "predict everything
+    positive" — without a cap, Pneumonia gets weight ~79 and Hernia ~544, which causes
+    the model to predict all classes as positive to avoid the huge false-negative penalty.
     """
     pos_count = torch.zeros(num_classes)
     total = 0
@@ -100,6 +115,5 @@ def get_class_weights(loader: DataLoader, num_classes: int = config.NUM_CLASSES)
         pos_count += labels.sum(dim=0)
         total += labels.shape[0]
     neg_count = total - pos_count
-    # avoid division by zero
     pos_weight = neg_count / (pos_count + 1e-6)
-    return pos_weight
+    return torch.clamp(pos_weight, max=max_weight)

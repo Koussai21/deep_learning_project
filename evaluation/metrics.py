@@ -1,12 +1,3 @@
-"""
-Evaluation metrics for multi-label classification on imbalanced medical data.
-
-Key metrics for ChestMNIST (14 classes, strong imbalance):
-  - AUC-ROC (macro and micro) : threshold-independent, robust to imbalance
-  - Average Precision (mAP)    : area under precision-recall curve
-  - F1 score per class         : harmonic mean of precision and recall
-  - Hamming loss               : fraction of incorrectly predicted labels
-"""
 import numpy as np
 import torch
 from sklearn.metrics import (
@@ -48,7 +39,7 @@ def compute_metrics(
         for i, name in enumerate(class_names):
             metrics[f"auc_{name}"] = per_class_auc[i]
     except ValueError:
-        # Some classes may have no positive examples in small test sets
+        
         metrics["auc_macro"] = float("nan")
         metrics["auc_micro"] = float("nan")
 
